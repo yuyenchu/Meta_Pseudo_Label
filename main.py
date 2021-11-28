@@ -5,7 +5,9 @@ import glob
 import os
 from os.path import isdir, exists, join, abspath
 import time
+
 from utils import *
+import config 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-p','--path', dest='path', default='./', type=pathlib.Path, help='data path', required=True)
@@ -19,16 +21,10 @@ parser.add_argument('-p','--path', dest='path', default='./', type=pathlib.Path,
 #         flush=True
 #     )
 
-uda_args = {
-    'augmentation_methods':[
-        ('brightness',  {'max_delta': 0.2}),
-        ('hue',         {'max_delta': 0.2})
-    ]}
-
 if __name__ == "__main__":
     args = parser.parse_args()
     
     DATA_PATH = args.path.resolve(strict=True)
-    mpl = MPL(DATA_PATH, uda_args=uda_args)
+    mpl = MPL(DATA_PATH, **config.mnist)
     mpl.fit(15)
     print('done')            
