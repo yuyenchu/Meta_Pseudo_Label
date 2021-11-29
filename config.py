@@ -28,3 +28,7 @@ mnist = {
         'unlabel_batch_size': 4096
     }
 }
+
+config = {
+    'mnist': mnist
+}

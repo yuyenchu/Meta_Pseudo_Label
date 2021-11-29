@@ -6,9 +6,11 @@ import sys
 import time
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import losses, optimizers, metrics, Input
+from tensorflow.keras import losses, optimizers, metrics, models, Input
 from typing import Tuple
 import model
+
+DEBUG = False
 
 class UDA:
     def __init__(self, augmentation_methods, out_shape=(28, 28, 3), seed=None, distort_fn=lambda x:x):
@@ -116,7 +118,7 @@ class DataGenerator:
                             buffer_size, 
                             reshuffle_each_iteration=True
                         ).batch(batch_size)
-
+    @tf.function
     def get_label(self, file_path):
         # Convert the path to a list of path components
         parts = tf.strings.split(file_path, os.path.sep)
@@ -125,12 +127,14 @@ class DataGenerator:
         # Integer encode the label
         return tf.argmax(one_hot)
 
+    @tf.function
     def decode_img(self, img):
         # Convert the compressed string to a 3D uint8 tensor
         img = tf.io.decode_jpeg(img, channels=self.out_shape[-1])
         # Resize the image to the desired size
         return tf.image.resize(img, self.out_shape[:-1])
 
+    @tf.function
     def load_image_label(self, file_path):
         label = self.get_label(file_path)
         # Load the raw data from the file as a string
@@ -138,6 +142,7 @@ class DataGenerator:
         img = (self.decode_img(img)-128.0)/128.0
         return img, label
 
+    @tf.function
     def load_image_unlabel(self, file_path):
         img = tf.io.read_file(file_path)
         img = (self.decode_img(img)-128.0)/128.0
@@ -150,9 +155,10 @@ class DataGenerator:
         return self.unlabeled.get_next()
 
 class MPL:
-    def __init__(self, data_path, verbose=False, s_opt={}, t_opt={}, data_args={}, model=model.get_model,
-                uda_args={'augmentation_methods':[('brightness',{'max_delta':0.2})]}):
+    def __init__(self, data_path, save_path='', verbose=False, s_opt={}, t_opt={}, model=model.get_model,
+                data_args={}, uda_args={'augmentation_methods':[('brightness',{'max_delta':0.2})]}):
         self.data = DataGenerator(data_path, **data_args)
+        self.UDA = UDA(**uda_args)
         self.student = model(classes=len(self.data.classes))
         self.teacher = model(classes=len(self.data.classes))
         self.loss_fn = losses.SparseCategoricalCrossentropy(reduction=losses.Reduction.NONE)
@@ -172,7 +178,19 @@ class MPL:
             'accu/teacher/label':       metrics.SparseCategoricalAccuracy(name='teacher_labeled_accuracy'),
             # 'accu/teacher/test':        metrics.SparseCategoricalAccuracy(name='teacher_testing_accuracy')
         }
-        self.UDA = UDA(**uda_args)
+
+        if len(save_path)==0:
+            save_path = datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.save_path = save_path
+        self.ckpt_path = join(self.save_path, 'ckpt')
+        self.model_path = join(self.save_path, 'model')
+
+        self.summary_writer = tf.summary.create_file_writer(
+            join(self.save_path, 'log')
+        )
+        self.s_checkpoint = tf.train.Checkpoint(optimizer=self.s_optimizer, model=self.student)
+        self.t_checkpoint = tf.train.Checkpoint(optimizer=self.t_optimizer, model=self.teacher)
+        
         self.verbose = verbose
         if self.verbose:
             print('-'*24,'MPL Information','-'*24)
@@ -233,6 +251,9 @@ class MPL:
         self.metrics['loss/teacher/label'].update_state(teacher_l_loss, label_batch_size)
         self.metrics['loss/teacher/uda'].update_state(teacher_UDA_loss, label_batch_size)
         
+        with self.summary_writer.as_default():
+            for name, metric in self.metrics.items():
+                tf.summary.scalar(name, metric.result(), step=self.s_optimizer.iterations)
         # tf.print('',label[0:5], ':',tf.argmax(teacher_pred_l[0:5],axis=1),':',tf.argmax(student_pred_l[0:5],axis=1))
         return {
             'loss/student': student_ul_loss, 
@@ -242,17 +263,21 @@ class MPL:
 
     def fit(self, n_epochs):
         padding = len(str(self.data.steps))
-        for epoch in range(n_epochs):
-            print(f'\nEpoch {epoch: >{len(str(n_epochs))}}/{n_epochs}')
+        tf.print('\n'+'-'*25,'Training Start',end='-'*26)
+        for epoch in range(1, n_epochs+1):
+            tf.print(f'\nEpoch {epoch: >{len(str(n_epochs))}}/{n_epochs}')
             start = time.time()
             for step in range(self.data.steps):
                 values = self.train_step()
             end = time.time()-start
-            out = [f'h={tf.strings.as_string(values["h"])}']
-            for name, metric in self.metrics.items():
-                out.append(f'{name}: {tf.strings.as_string(metric.result(),3)}')
-            tf.print('\r', end='')
-            # tf.print(f'{step: >{padding}} ', *out, end=f' time/epoch={end:.3f}s')
+            if DEBUG:
+                out = [f'h={tf.strings.as_string(values["h"])}']
+                for name, metric in self.metrics.items():
+                    out.append(f'{name}: {tf.strings.as_string(metric.result(),3)}')
+            else:
+                out = f'student_loss={tf.strings.as_string(self.metrics["loss/student/unlabel"].result(),4)} teacher_loss={tf.strings.as_string(self.metrics["loss/teacher/label"].result(),4)}'
+            tf.print('\r ', end='')
+            # tf.print({step: >{padding}})
             tf.print(*out, end=f' time={end:.3f}s')
             for metric in self.metrics.values():
                 metric.reset_state()
@@ -262,6 +287,17 @@ class MPL:
             student_test_metric.update_state(y, self.student(x, training=False))
             teacher_test_metric.update_state(y, self.teacher(x, training=False))
         tf.print('\nstudent testing accuracy:',student_test_metric.result(),'\tteacher testing accuracy:',teacher_test_metric.result())
+        return student_test_metric.result(), teacher_test_metric.result()
+
+    def save():
+        self.student.save(join(self.model_path, 'student.h5'))
+        self.teacher.save(join(self.model_path, 'teacher.h5'))
+    
+    def restore():
+        self.student = models.load_model(join(self.model_path, 'student.h5'))
+        self.teacher = models.load_model(join(self.model_path, 'teacher.h5'))
+        self.s_checkpoint.restore(join(self.ckpt_path, 'student'))
+        self.t_checkpoint.restore(join(self.ckpt_path, 'teacher'))
 
     @tf.function
     def debug(self):
@@ -289,3 +325,12 @@ def pretty(d, indent=0):
             pretty(value, indent+1)
         else:
             print(f'\t{value}')
+        
+# def display_progress(step, time, loss, total=1000, c = 100):
+#     s = step % total
+#     tf.print('\r', end='')
+#     tf.print(
+#         f'{step:6d}['+'='*((s)//c)+('='if (s+1)%total==0 else '>')+' '*((total-s-1)//c)+']', 
+#         end=f' Time: {time:3.2f}s, teacher loss: {loss/(s if s>0 else 1):.5f}, student loss: {loss:.5f}', 
+#         flush=True
+#     )
