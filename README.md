@@ -21,9 +21,9 @@ pip install -r requirements.txt
 
 ### Executing program
 
-* Run example on CartPole-v0 environment
+* Run with mnist dataset
 ```
-python example.py
+python main.py -p mnist/output -e 15 -c mnist
 ```
 
 ## Help
