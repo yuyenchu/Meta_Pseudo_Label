@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 from os.path import join, isdir
 import glob
@@ -174,9 +175,9 @@ class MPL:
             'loss/teacher/label':       metrics.Mean(name='teacher_labeled_loss'),
             'loss/teacher/uda':         metrics.Mean(name='teacher_uda_loss'),
             'accu/student/label':       metrics.SparseCategoricalAccuracy(name='student_labeled_accuracy'),
-            # 'accu/student/test':        metrics.SparseCategoricalAccuracy(name='student_testing_accuracy'),
+            'accu/student/test':        metrics.SparseCategoricalAccuracy(name='student_testing_accuracy'),
             'accu/teacher/label':       metrics.SparseCategoricalAccuracy(name='teacher_labeled_accuracy'),
-            # 'accu/teacher/test':        metrics.SparseCategoricalAccuracy(name='teacher_testing_accuracy')
+            'accu/teacher/test':        metrics.SparseCategoricalAccuracy(name='teacher_testing_accuracy')
         }
 
         if len(save_path)==0:
@@ -201,9 +202,10 @@ class MPL:
             pretty(uda_args, 1)
             print('Model summary:')
             self.student.summary()
+        self.train_step = self._train_step.get_concrete_function()
 
     @tf.function
-    def train_step(self):
+    def _train_step(self):
         data, label    = self.data.next_labeled()
         unlabeled_data = self.data.next_unlabeled()
 
@@ -261,11 +263,27 @@ class MPL:
             'h': h
         }
 
+    @tf.function
+    def evaluate(self):
+        tf.print('-'*23,'Evaluation Start','-'*24)
+        for x,y in self.data.test:
+            self.metrics['accu/student/test'].update_state(y, self.student(x, training=False))
+            self.metrics['accu/teacher/test'].update_state(y, self.teacher(x, training=False))
+        tf.print('Student accuracy:',self.metrics['accu/student/test'].result())
+        tf.print('Teacher accuracy:',self.metrics['accu/teacher/test'].result())
+        tf.print('-'*23,'Evaluation End','-'*26,'\n')
+        return self.metrics['accu/student/test'].result(), self.metrics['accu/teacher/test'].result()
+
+    @tf.function
+    def reset_metric(self):
+        for metric in self.metrics.values():
+            metric.reset_state()
+
     def fit(self, n_epochs):
         padding = len(str(self.data.steps))
-        tf.print('\n'+'-'*25,'Training Start',end='-'*26)
+        tf.print('\n'+'-'*24,'Training Start','-'*25)
         for epoch in range(1, n_epochs+1):
-            tf.print(f'\nEpoch {epoch: >{len(str(n_epochs))}}/{n_epochs}')
+            tf.print(f'Epoch {epoch: >{len(str(n_epochs))}}/{n_epochs}')
             start = time.time()
             for step in range(self.data.steps):
                 values = self.train_step()
@@ -276,18 +294,12 @@ class MPL:
                     out.append(f'{name}: {tf.strings.as_string(metric.result(),3)}')
             else:
                 out = f'student_loss={tf.strings.as_string(self.metrics["loss/student/unlabel"].result(),4)} teacher_loss={tf.strings.as_string(self.metrics["loss/teacher/label"].result(),4)}'
-            tf.print('\r ', end='')
+            # tf.print('\r ', end='')
             # tf.print({step: >{padding}})
-            tf.print(*out, end=f' time={end:.3f}s')
-            for metric in self.metrics.values():
-                metric.reset_state()
-        student_test_metric = metrics.SparseCategoricalAccuracy(name='student_test_accuracy')
-        teacher_test_metric = metrics.SparseCategoricalAccuracy(name='teacher_test_accuracy')
-        for x,y in self.data.test:
-            student_test_metric.update_state(y, self.student(x, training=False))
-            teacher_test_metric.update_state(y, self.teacher(x, training=False))
-        tf.print('\nstudent testing accuracy:',student_test_metric.result(),'\tteacher testing accuracy:',teacher_test_metric.result())
-        return student_test_metric.result(), teacher_test_metric.result()
+            tf.print(*out, f' time={end:.3f}s')
+            self.reset_metric()
+        tf.print('-'*24,'Training End','-'*27,'\n')
+        return self.evaluate()
 
     def save():
         self.student.save(join(self.model_path, 'student.h5'))
