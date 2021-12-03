@@ -2,7 +2,8 @@
 
 ## Description
 
-Recreating the Meta Pseudo Label(MPL), a State-of-the-Art  semi-supervised learning method proposed by the Google team.
+Recreating the Meta Pseudo Label(MPL), a state of the art semi-supervised learning method proposed by the Google team.  
+"Meta Pseudo Labels has a teacher network to generate pseudo labels on unlabeled data to teach a student network. However, unlike Pseudo Labels where the teacher is fixed, the teacher in Meta Pseudo Labels is constantly adapted by the feedback of the student's performance on the labeled dataset. As a result, the teacher generates better pseudo labels to teach the student."
 
 ## Getting Started
 
@@ -26,11 +27,20 @@ pip install -r requirements.txt
 python main.py -p mnist/data -e 15 -c mnist
 ```
 
+* Using Tensorboard
+```
+tensorboard --logdir save/log/
+```
+
 ## Help
 
-Email us for more detail
+* Print help information
+```
+python main.py -h
+```
+* Email me for more detail
 
-## Authors
+## Author
 
 Andrew Yu - [Github](https://github.com/yuyenchu) - andrew7011616@gmail.com
 
@@ -43,6 +53,7 @@ Andrew Yu - [Github](https://github.com/yuyenchu) - andrew7011616@gmail.com
 
 - [ ] add save best version of model/checkpoint
 - [ ] add grid search for parameter
+- [ ] add mirrored strategy (distributed training)
 - [ ] make abstract class for future implementation
 - [ ] debugging
 
