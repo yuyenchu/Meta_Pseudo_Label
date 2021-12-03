@@ -202,10 +202,13 @@ class MPL:
             pretty(uda_args, 1)
             print('Model summary:')
             self.student.summary()
+        self.evaluate = self._evaluate.get_concrete_function()
         self.train_step = self._train_step.get_concrete_function()
+        self.reset_metric = self._reset_metric.get_concrete_function()
 
     @tf.function
     def _train_step(self):
+        print("[0]retracing...",end="")
         data, label    = self.data.next_labeled()
         unlabeled_data = self.data.next_unlabeled()
 
@@ -257,6 +260,7 @@ class MPL:
             for name, metric in self.metrics.items():
                 tf.summary.scalar(name, metric.result(), step=self.s_optimizer.iterations)
         # tf.print('',label[0:5], ':',tf.argmax(teacher_pred_l[0:5],axis=1),':',tf.argmax(student_pred_l[0:5],axis=1))
+        print("done")
         return {
             'loss/student': student_ul_loss, 
             'loss/teacher': teacher_loss,
@@ -264,7 +268,8 @@ class MPL:
         }
 
     @tf.function
-    def evaluate(self):
+    def _evaluate(self):
+        print("[1]retracing...",end="")
         tf.print('-'*23,'Evaluation Start','-'*24)
         for x,y in self.data.test:
             self.metrics['accu/student/test'].update_state(y, self.student(x, training=False))
@@ -272,12 +277,15 @@ class MPL:
         tf.print('Student accuracy:',self.metrics['accu/student/test'].result())
         tf.print('Teacher accuracy:',self.metrics['accu/teacher/test'].result())
         tf.print('-'*23,'Evaluation End','-'*26,'\n')
+        print("done")
         return self.metrics['accu/student/test'].result(), self.metrics['accu/teacher/test'].result()
 
     @tf.function
-    def reset_metric(self):
+    def _reset_metric(self):
+        print("[2]retracing...",end="")
         for metric in self.metrics.values():
             metric.reset_state()
+        print("done")
 
     def fit(self, n_epochs):
         padding = len(str(self.data.steps))
@@ -292,20 +300,19 @@ class MPL:
                 out = [f'h={tf.strings.as_string(values["h"])}']
                 for name, metric in self.metrics.items():
                     out.append(f'{name}: {tf.strings.as_string(metric.result(),3)}')
+                tf.print(*out, f' time={end:.3f}s')
             else:
                 out = f'student_loss={tf.strings.as_string(self.metrics["loss/student/unlabel"].result(),4)} teacher_loss={tf.strings.as_string(self.metrics["loss/teacher/label"].result(),4)}'
-            # tf.print('\r ', end='')
-            # tf.print({step: >{padding}})
-            tf.print(*out, f' time={end:.3f}s')
+                tf.print(out, f' time={end:.3f}s')
             self.reset_metric()
         tf.print('-'*24,'Training End','-'*27,'\n')
         return self.evaluate()
 
-    def save():
+    def save(self):
         self.student.save(join(self.model_path, 'student.h5'))
         self.teacher.save(join(self.model_path, 'teacher.h5'))
     
-    def restore():
+    def restore(self):
         self.student = models.load_model(join(self.model_path, 'student.h5'))
         self.teacher = models.load_model(join(self.model_path, 'teacher.h5'))
         self.s_checkpoint.restore(join(self.ckpt_path, 'student'))
@@ -313,6 +320,7 @@ class MPL:
 
     @tf.function
     def debug(self):
+        print("[DEBUG]retracing...",end="")
         data, label    = self.data.next_labeled()
         with tf.GradientTape() as ttape:
             pred = self.student(data)
@@ -322,6 +330,7 @@ class MPL:
         self.metrics['loss/student/label'].update_state(loss)
         self.metrics['accu/student/label'].update_state(label, pred)
         # tf.print('',label[0:5], ':',tf.argmax(pred[0:5],axis=1))
+        print("done")
         return {'h':tf.constant(0.0)}
 
 @tf.function

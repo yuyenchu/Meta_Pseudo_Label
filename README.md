@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 * Run with mnist dataset
 ```
-python main.py -p mnist/output -e 15 -c mnist
+python main.py -p mnist/data -e 15 -c mnist
 ```
 
 ## Help
