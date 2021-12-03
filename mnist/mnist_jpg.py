@@ -20,7 +20,7 @@
 # --- output
 
 # ------------------- USAGE --------------------------
-# > python scriptname output 
+# > python mnist_jpg.py data 
 #
 
 # On Windows - The results will be saved in the same folder as the argument passed. So if you pass a different folder name instead of Output in the argument, the script will create that folder and save the results in that.

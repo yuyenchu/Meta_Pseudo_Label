@@ -20,6 +20,14 @@ pip install -r requirements.txt
 ```
 * Edit config.py for your need
 
+### Organize dataset
+* Decode mnist dataset and organize it into compatible folder structure
+```
+cd mnist
+python mnist_jpg.py data 
+cd data
+python move_mnist.py
+```
 ### Executing program
 
 * Run with mnist dataset
